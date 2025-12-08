@@ -275,4 +275,43 @@ SELECT fct.name, SUM(slots * CASE
 		   ORDER BY revenue;
 --11)Output the facility id that has the highest number of slots booked. 
 --For bonus points, try a version without a LIMIT clause. This version will probably look messy!
-
+SELECT facid, SUM(slots) AS "Total Slots" FROM cd.bookings
+GROUP BY facid
+ORDER BY SUM(slots) DESC LIMIT 1;
+--12)List of the total number of slots booked per facility per month in the year of 2012. 
+--Include output rows containing totals for all months per facility, and a total for all months for all facilities.
+--The output table should shows facility id, month and slots, sorted by the id and month. 
+--When calculating  return null values in the month and facid columns.
+SELECT facid, EXTRACT(month from starttime) AS month, SUM(slots) AS slots FROM cd.bookings
+WHERE (starttime >= '2012-01-01' AND starttime < '2013-01-01')
+GROUP BY ROLLUP(facid,month)
+ORDER BY facid, month; 
+--ROLLUP generates aggregate rows by following a strict hierarchy, from the most detailed grouping down to the overall total.
+--14) total number of hours booked per facility, remembering that a slot lasts half an hour.
+--The output table should consist of the facility id, name, and hours booked, sorted by facility id. Try formatting the hours to two decimal places.
+SELECT bks.facid, fct.name, ROUND(SUM(bks.slots)/2.0, 2) AS "Total Hours" FROM cd.bookings bks
+INNER JOIN cd.facilities fct ON
+bks.facid = fct.facid
+GROUP BY bks.facid, fct.name
+ORDER BY bks.facid;
+--15)Produce a list of each member name, id, and their first booking after September 1st 2012. Order by member ID.
+SELECT mem.surname, mem.firstname, mem.memid, MIN(starttime) FROM cd.members mem
+INNER JOIN cd.bookings bks ON
+mem.memid = bks.memid
+WHERE starttime > '2012-09-01'
+GROUP BY mem.surname, mem.firstname, mem.memid
+ORDER BY mem.memid;
+--16)Produce a list of member names, with each row containing the total member count. Order by join date, and include guest members.
+SELECT (SELECT COUNT(*) FROM cd.members), firstname, surname FROM cd.members mems
+GROUP BY mems.firstname, mems.surname, mems.joindate
+ORDER BY joindate;
+--17)Produce a monotonically increasing numbered list of members (including guests)
+-- ordered by their date of joining. Remember that member IDs are not guaranteed to be sequential.
+--OVER()display individual records (like a member's name) AND a total statistic for the whole group
+--If you want both the detail and the big picture calculation in the same row, use OVER()!
+SELECT row_number() OVER (ORDER BY joindate), firstname, surname
+FROM cd.members ORDER BY joindate;
+--OR
+SELECT COUNT(*) OVER (ORDER BY joindate) AS row_number, firstname, surname FROM cd.members;
+--17.Output the facility id that has the highest number of slots booked.
+--Ensure that in the event of a tie, all tieing results get output.
