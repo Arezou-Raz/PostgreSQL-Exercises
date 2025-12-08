@@ -84,5 +84,195 @@ bks.facid = fct.facid
 WHERE fct.name IN ('Tennis Court 1','Tennis Court 2')
 ORDER BY member, facility;
 --6)How can you produce a list of bookings on the day of 2012-09-14 which will cost the member (or guest) more than $30? Remember that guests have different costs to members (the listed costs are per half-hour 'slot'), and the guest user is always ID 0. Include in your output the name of the facility, the name of the member formatted as a single column, and the cost. Order by descending cost, and do not use any subqueries.
+SELECT
+ 
+  CASE
+    WHEN bks.memid = 0 THEN 'GUEST GUEST'
+    ELSE mems.firstname || ' ' || mems.surname
+  END AS member,
+  fct.name AS facility,
+  CASE
+    WHEN bks.memid = 0 THEN bks.slots * fct.guestcost
+    ELSE bks.slots * fct.membercost
+  END AS cost
+FROM cd.bookings bks
+JOIN cd.facilities fct ON bks.facid = fct.facid
+-- Use LEFT JOIN to ensure bookings with memid=0 are included
+LEFT JOIN cd.members mems ON bks.memid = mems.memid
+WHERE
+  bks.starttime >= '2012-09-14' AND bks.starttime < '2012-09-15'
+  AND (
+    (bks.memid = 0 AND bks.slots * fct.guestcost > 30) OR
+    (bks.memid != 0 AND bks.slots * fct.membercost > 30)
+  )
+ORDER BY cost DESC;
+--7)How can you output a list of all members, including the individual who recommended them (if any), without using any joins? Ensure that there are no duplicates in the list, and that each firstname + surname pairing is formatted as a column and ordered.
+SELECT DISTINCT mems.firstname || ' ' ||  mems.surname as member,
+	
+	(
+	SELECT recs.firstname || ' ' || recs.surname as recommender 
+		
+	 FROM cd.members recs 
+		WHERE recs.memid = mems.recommendedby
+	)
+	FROM 
+		cd.members mems
 
-    
+ORDER BY member; 
+--8)The Produce a list of costly bookings exercise contained some messy logic: we had to calculate the booking cost in both the WHERE clause and the CASE statement.
+--Try to simplify this calculation using subqueries. For reference, the question was:
+--How can you produce a list of bookings on the day of 2012-09-14 which will cost the member (or guest) more than $30? 
+--Remember that guests have different costs to members (the listed costs are per half-hour 'slot'), and the guest user is always ID 0.
+--Include in your output the name of the facility, the name of the member formatted as a single column, and the cost. Order by descending cost.
+SELECT member, facility, cost FROM (
+	SELECT 
+		mems.firstname || ' ' || mems.surname AS member,
+		facs.name AS facility,
+		CASE
+			WHEN mems.memid = 0 then
+				bks.slots*facs.guestcost
+			ELSE
+				bks.slots*facs.membercost
+		END AS cost
+		FROM
+			cd.members mems
+			INNER JOIN cd.bookings bks
+				ON mems.memid = bks.memid
+			INNER JOIN cd.facilities facs
+				ON bks.facid = facs.facid
+		WHERE
+			bks.starttime >= '2012-09-14'AND bks.starttime < '2012-09-15'
+	) AS bookings
+	WHERE cost > 30
+ORDER BY cost desc; 
+--Chapter 3: Modifying data
+--1)The club is adding a new facility - a spa. We need to add it into the facilities table. Use the following values:
+--facid: 9, Name: 'Spa', membercost: 20, guestcost: 30, initialoutlay: 100000, monthlymaintenance: 800.
+INSERT INTO cd.facilities
+(facid, name, membercost, guestcost, initialoutlay, monthlymaintenance)
+VALUES
+(9, 'Spa', 20, 30, 100000, 800);
+--OR
+INSERT INTO cd.facilities VALUES (9, 'Spa', 20, 30, 100000, 800);
+--2)In the previous exercise, you learned how to add a facility.
+--Now you're going to add multiple facilities in one command. Use the following values:
+--facid: 9, Name: 'Spa', membercost: 20, guestcost: 30, initialoutlay: 100000, monthlymaintenance: 800.
+--facid: 10, Name: 'Squash Court 2', membercost: 3.5, guestcost: 17.5, initialoutlay: 5000, monthlymaintenance: 80.
+INSERT INTO cd.facilities
+VALUES
+(9, 'Spa', 20, 30, 100000, 800),
+(10, 'Squash Court 2', 3.5, 17.5, 5000, 80);
+--3)Let's try adding the spa to the facilities table again.
+--This time, though, we want to automatically generate the value for the next facid, rather than specifying it as a constant.
+--Use the following values for everything else: 
+INSERT INTO cd.facilities
+(facid, name, membercost, guestcost, initialoutlay, monthlymaintenance)
+SELECT 
+    MAX(facid) + 1, 'Spa', 20, 30, 100000, 800
+FROM 
+    cd.facilities;
+--4)We made a mistake when entering the data for the second tennis court. The initial outlay was 10000 rather than 8000:
+--you need to alter the data to fix the error.
+UPDATE cd.facilities
+SET initialoutlay = 10000
+WHERE facid = 1;
+--5)We want to increase the price of the tennis courts for both members and guests. Update the costs to be 6 for members, and 30 for guests.
+--The Tennis Courts 1 AND 2 correspond to facid 0 and facid 1 (0,1) IS OUR RANGE. 
+UPDATE cd.facilities
+    SET
+	   membercost = 6,
+	   guestcost = 30
+	WHERE facid IN (0,1);   
+--6)We want to alter the price of the second tennis court so that it costs 10% more than the first one.
+--Try to do this without using constant values for the prices, so that we can reuse the statement if we want to.
+UPDATE cd.facilities
+ SET 
+     membercost = (SELECT membercost * 1.1 FROM cd.facilities WHERE facid = 0),
+     guestcost = (SELECT guestcost * 1.1 FROM cd.facilities WHERE facid = 0)
+WHERE facid = 1;
+--7)As part of a clearout of our database, we want to delete all bookings from the cd.bookings table. 
+TUNCATE cd.bookings
+--OR
+DELETE FROM cd.bookings;
+--8)We want to remove member 37, who has never made a booking, from our database. 
+DELETE FROM cd.members WHERE memid = 37;
+--9)In our previous exercises, we deleted a specific member who had never made a booking. now delete all members who have never made a booking.
+DELETE FROM cd.members
+--10)In our previous exercises, we deleted a specific member who had never made a booking.
+How can we make that more general, to delete all members who have never made a booking?
+DELETE FROM cd.members 
+WHERE memid NOT IN (SELECT memid FROM cd.bookings);
+--CHAPTER 4: Aggregation 
+--1)For our first foray into aggregates, we're going to stick to something simple.
+--how many facilities exist - produce a total count.
+SELECT COUNT(*) FROM cd.facilities;
+--2)Produce a count of the number of facilities that have a cost to guests of 10 or more.
+SELECT COUNT(*) FROM cd.facilities
+WHERE guestcost >= 10;
+--3)Produce a count of the number of recommendations each member has made. Order by member ID.
+SELECT recommendedby, COUNT(*) FROM cd.members
+WHERE recommendedby IS NOT NULL
+GROUP BY recommendedby
+ORDER BY recommendedby;
+--4)Produce a list of the total number of slots booked per facility. 
+--produce an output table consisting of facility id and slots, sorted by facility id.
+SELECT facid, SUM(slots) AS "Total slots" FROM cd.bookings
+GROUP BY facid
+ORDER BY facid;
+--5)Produce a list of the total number of slots booked per facility in the month of September 2012. 
+--Produce an output table consisting of facility id and slots, sorted by the number of slots.
+SELECT facid, SUM(slots) AS "Total Slots" FROM cd.bookings
+WHERE starttime >= '2012-09-01' AND  starttime < '2012-10-1'
+GROUP BY facid
+ORDER BY SUM(slots);
+--6)Produce a list of the total number of slots booked per facility per month in the year of 2012. 
+--Produce an output table consisting of facility id and slots, sorted by the id and month.
+--Using  EXTRACT allows you to get individual components of a timestamp, like day, month, year, etc.group by the output of this function	
+SELECT facid, EXTRACT (month from starttime) AS month, SUM(slots) AS "Total Slots" FROM cd.bookings
+WHERE EXTRACT (year from starttime) = 2012
+GROUP BY facid, month
+ORDER BY facid, month;
+--7)Find the total number of members (including guests) who have made at least one booking.
+SELECT COUNT(DISTINCT memid) FROM cd.bookings
+WHERE slots >= 1;
+--8)Produce a list of facilities > 1000 slots booked. Output table consisting of facility id and slots, sorted by facility id.
+SELECT facid, SUM(slots) AS "Total Slots" FROM cd.bookings
+GROUP BY facid
+HAVING SUM(slots) > 1000
+ORDER BY facid;
+--SUM(SLOTS)you'll get one big number—the total revenue for all products combined.
+--GROUP BY facid YOU TELL THE SQL TO GROUP  product A into one group, all for Product B into another group, and so onare in A otherwise just SUM(SLOTS) GIVES THE BIG NUMBER  
+--Then the HAVING clause runs after the SUM(slots) AND keeping only those that exceed 1000
+
+--9)Produce a list of facilities along with their total revenue.
+--The output table should consist of facility name and revenue, sorted by revenue.There's a different cost for guests and members!
+SELECT fct.name, SUM(slots * CASE
+		   WHEN memid = 0 THEN fct.guestcost
+		   ELSE fct.membercost
+	       END) AS revenue
+       FROM cd.bookings bks
+       INNER JOIN cd.facilities fct ON
+	   bks.facid = fct.facid
+
+GROUP BY fct.name
+ORDER BY revenue;
+--10)Produce a list of facilities with a total revenue < than 1000. Output table  = facility name and revenue, sorted by revenue.
+--There's a different cost for guests and members.
+--filtering the calculated revenue by using HAVING Clause
+SELECT fct.name, SUM(slots * CASE
+		   WHEN memid = 0 THEN fct.guestcost
+		   ELSE fct.membercost
+	       END) AS revenue
+		   
+		   FROM cd.bookings bks
+		   INNER JOIN cd.facilities fct ON
+		   bks.facid = fct.facid
+		   GROUP BY fct.name
+		   HAVING SUM(slots * CASE
+		   WHEN memid = 0 THEN fct.guestcost
+		   ELSE fct.membercost
+		   END) < 1000
+		   ORDER BY revenue;
+--11)Output the facility id that has the highest number of slots booked. 
+--For bonus points, try a version without a LIMIT clause. This version will probably look messy!
+
