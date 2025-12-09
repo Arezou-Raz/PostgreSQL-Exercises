@@ -314,4 +314,127 @@ FROM cd.members ORDER BY joindate;
 --OR
 SELECT COUNT(*) OVER (ORDER BY joindate) AS row_number, firstname, surname FROM cd.members;
 --17.Output the facility id that has the highest number of slots booked.
---Ensure that in the event of a tie, all tieing results get output.
+--Ensure that in the event of a tie, all tieing results get output. 
+--IT IS CALLED THE MAX-PER-GROUP OR TIE-BREAKER PATTERN
+
+ 
+ SELECT facid, SUM(slots) AS total 
+ FROM cd.bookings
+ GROUP BY facid
+ HAVING SUM(slots) = (
+   SELECT MAX(T.total)
+   FROM(
+        SELECT facid, SUM(slots) AS total FROM cd.bookings
+        GROUP BY  facid
+     ) AS T
+   );
+--OR
+SELECT facid, total FROM (
+  
+  SELECT facid, SUM(slots) AS total,
+         rank() OVER (ORDER BY SUM(slots) DESC) AS rank
+  
+  FROM cd.bookings
+  GROUP BY facid
+) AS ranked WHERE rank = 1	 --LOOKING FOR A RANK NUMBER THAT IS FIRST
+--18)Produce a list of members (including guests) WITH number of hours they've booked in facilities, rounded to the nearest ten hours. 
+--Rank them by this rounded figure, producing output of first name, surname, rounded hours, rank. Sort by rank, surname, and first name.
+SELECT
+    subq.firstname,
+    subq.surname,
+    subq.hours,
+    RANK() OVER (ORDER BY subq.hours DESC) AS member_rank -- Use subq.hours for ranking
+FROM
+    (
+        SELECT
+            mems.firstname,
+            mems.surname,
+            mems.memid, -- Necessary for unique grouping
+            ROUND(SUM(bks.slots) / 2.0, -1) AS hours 
+        FROM
+            cd.bookings bks
+        INNER JOIN
+            cd.members mems ON bks.memid = mems.memid
+        GROUP BY
+            mems.memid, mems.firstname, mems.surname -- Group by all non-aggregate columns
+    ) AS subq
+ORDER BY
+    member_rank, subq.surname, subq.firstname;
+--19)Produce a list of the top three revenue generating facilities (including ties).
+--Output facility name and rank, sorted by rank and facility name.
+SELECT name, rank FROM (
+  
+  SELECT fct.name AS name, RANK () OVER (ORDER BY SUM( CASE 
+		
+		WHEN memid = 0 THEN slots * fct.guestcost
+  		ELSE slots * fct.membercost 
+		END ) 
+		DESC ) AS rank 
+
+FROM cd.bookings bks 
+
+INNER JOIN cd.facilities fct ON 
+bks.facid = fct.facid 
+
+GROUP BY fct.name) AS subq
+WHERE rank <= 3
+ORDER BY rank;	
+--20)Classify facilities into equally sized groups of high, average, and low based on their revenue. Order by classification and facility name.
+--ntile ; sort and assign number.The top third of the data receives the label 1.The middle third,label 2.The bottom third ,label 3.
+--.This automatically creates three equally sized groups for classification (High, Medium, Low).
+--SAYING 99 customers ordered by sales, the top 33 is NTILE(3)=1, the next 33 is NTILE(3)=2, and the bottom 33 is NTILE(3)=3.
+SELECT name, 
+CASE class WHEN 1 THEN 'high' 
+		   WHEN 2 THEN 'average'
+		   ELSE 'low' END
+FROM ( SELECT fct.name, ntile(3) OVER ( ORDER BY SUM(
+  CASE WHEN memid = 0 THEN slots * fct.guestcost 
+  	   ELSE slots * membercost END ) DESC ) AS class
+
+FROM cd.bookings bks 
+	INNER JOIN cd.facilities fct ON
+	 bks.facid = fct.facid
+	 GROUP BY fct.name
+	 ) AS subq
+	 
+ORDER BY class, name;
+--21)Based on the 3 complete months of data so far, calculate the amount of time each facility will take to repay its cost of ownership. 
+--Remember to take into account ongoing monthly maintenance. Output facility name and payback time in months, order by facility name. 
+--Don't worry about differences in month lengths, we're only looking for a rough value here!
+SELECT fct.name AS name, 
+	   fct.initialoutlay / (
+		 ( SUM (
+		   CASE 
+				WHEN memid = 0 THEN slots * guestcost
+				
+		        ELSE slots * membercost END ) / 3 
+		  ) 
+				- fct.monthlymaintenance ) AS months FROM cd.bookings bks 
+
+INNER JOIN cd.facilities fct ON 
+bks.facid = fct.facid
+GROUP BY fct.facid
+ORDER BY name;
+--22)For each day in August 2012, calculate a rolling average of total revenue over the previous 15 days. 
+--Output should contain date and revenue columns, sorted by the date. 
+--Remember to account for the possibility of a day having zero revenue. This one's a bit tough, so don't be afraid to check out the hint!
+SELECT dategen.date, (
+  SELECT SUM ( CASE 
+			  WHEN memid = 0 THEN slots * guestcost
+			  ELSE slots * membercost END ) AS rev
+  
+  FROM cd.bookings bks
+  INNER JOIN cd.facilities fct ON
+  bks.facid = fct.facid
+  
+  WHERE bks.starttime > dategen.date - interval '14 days'
+  	AND bks.starttime < dategen.date + interval '1 day' ) / 15 AS revenue
+	
+  FROM 
+   ( SELECT CAST(GENERATE_SERIES(timestamp '2012-08-01','2012-08-31', '1 day') AS date ) 
+	AS date
+	
+	)  AS dategen
+ORDER BY dategen.date;
+--Chapter 4 : Working with Timestamps 
+--1)
